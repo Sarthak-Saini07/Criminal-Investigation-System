@@ -70,20 +70,54 @@ class AnalyticsView(ttk.Frame):
             
             ttk.Label(card, text=val, font=("Segoe UI", 18, "bold"), foreground=color, style="Card.TLabel").pack(anchor=tk.W, pady=(6, 0))
 
-        # Embedded Matplotlib Figure Canvas
-        canvas_frame = ttk.Frame(tab_dash, style="Card.TFrame")
-        canvas_frame.pack(fill=tk.BOTH, expand=True)
+        # Dashboard Content Pane (Side-by-Side)
+        dashboard_content = ttk.Frame(tab_dash)
+        dashboard_content.pack(fill=tk.BOTH, expand=True)
+
+        # Left Column: Charts Container (60% width)
+        chart_container = ttk.Frame(dashboard_content, padding=(0, 0, 10, 0))
+        chart_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self.chart_card = ttk.Frame(chart_container, style="Card.TFrame", padding=10)
+        self.chart_card.pack(fill=tk.BOTH, expand=True)
 
         fig = create_analytics_figure(self.df)
-        canvas = FigureCanvasTkAgg(fig, master=canvas_frame)
-        canvas.draw()
-        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        self.canvas = FigureCanvasTkAgg(fig, master=self.chart_card)
+        self.canvas.draw()
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+        # Right Column: Recent Critical Cases Treeview (40% width)
+        table_container = ttk.Frame(dashboard_content, width=440)
+        table_container.pack(side=tk.RIGHT, fill=tk.BOTH, expand=False)
+        table_container.pack_propagate(False)
+
+        table_card = ttk.Frame(table_container, style="Card.TFrame", padding=12)
+        table_card.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(table_card, text="🚨 CRITICAL ACTIVE CASES", font=("Segoe UI", 11, "bold"), foreground="#00e676", style="Card.TLabel").pack(anchor=tk.W, pady=(0, 10))
+
+        cols = ("Case No", "Priority", "Status", "Lead Officer")
+        self.cases_tree = ttk.Treeview(table_card, columns=cols, show="headings", selectmode="browse", height=12)
+
+        for col in cols:
+            self.cases_tree.heading(col, text=col)
+            self.cases_tree.column(col, width=95, anchor=tk.CENTER)
+
+        self.cases_tree.column("Case No", width=110, anchor=tk.W)
+        self.cases_tree.column("Lead Officer", width=120, anchor=tk.W)
+
+        scroll = ttk.Scrollbar(table_card, orient=tk.VERTICAL, command=self.cases_tree.yview)
+        self.cases_tree.configure(yscrollcommand=scroll.set)
+        self.cases_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self._load_recent_cases()
 
         # Tab 2: Decision Insights & Strategic Recommendations
         tab_insights = ttk.Frame(notebook, padding=10)
         notebook.add(tab_insights, text="💡 Decision Insights & Recommendations")
 
-        txt_ins = tk.Text(tab_insights, padding=15, font=("Segoe UI", 10), bg="#171c28", fg="#e0e6ed", insertbackground="white", relief="flat")
+        txt_ins = tk.Text(tab_insights, padx=15, pady=15, font=("Segoe UI", 10), bg="#171c28", fg="#e0e6ed", insertbackground="white", relief="flat")
         txt_ins.pack(fill=tk.BOTH, expand=True)
 
         for ins in self.insights:
@@ -105,6 +139,41 @@ class AnalyticsView(ttk.Frame):
         txt_ins.tag_configure("bullet_title", font=("Segoe UI", 10, "bold"), foreground="#00b0ff")
         txt_ins.configure(state="disabled")
 
+    def _load_recent_cases(self):
+        """Fetches and populates recent active cases from the database."""
+        for item in self.cases_tree.get_children():
+            self.cases_tree.delete(item)
+
+        from database.queries import GET_ALL_CASES
+        from database.connection import get_db
+        db = get_db()
+        cases = db.fetch_all(GET_ALL_CASES)
+        
+        # Filter for active cases (Open / In Progress status)
+        active_cases = [c for c in cases if c["status"] in ["Open", "In Progress"]]
+        
+        for c in active_cases[:12]:
+            priority_emoji = "🔴 " if c["priority"] == "Critical" else ("🟠 " if c["priority"] == "High" else "")
+            self.cases_tree.insert("", tk.END, values=(
+                c["case_number"],
+                f"{priority_emoji}{c['priority']}",
+                c["status"],
+                c["lead_officer_name"] or "Unassigned"
+            ))
+
     def refresh_analytics(self):
         self._load_and_process_data()
+        
+        # Redraw matplotlib canvas
+        for widget in self.chart_card.winfo_children():
+            widget.destroy()
+            
+        fig = create_analytics_figure(self.df)
+        self.canvas = FigureCanvasTkAgg(fig, master=self.chart_card)
+        self.canvas.draw()
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        
+        # Reload cases tree
+        self._load_recent_cases()
+        
         messagebox.showinfo("Refreshed", "Analytics and Insights updated with latest database records.")

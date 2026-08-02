@@ -80,7 +80,7 @@ class EvidenceView(ttk.Frame):
         dialog.geometry("650x350")
 
         rows = self.db.fetch_all(GET_EVIDENCE_CHAIN, (ev_id,))
-        txt = tk.Text(dialog, padding=10, font=("Consolas", 10))
+        txt = tk.Text(dialog, padx=10, pady=10, font=("Consolas", 10))
         txt.pack(fill=tk.BOTH, expand=True)
 
         for r in rows:

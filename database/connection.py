@@ -52,14 +52,19 @@ class DatabaseManager:
                     port=port,
                     user=user,
                     password=password,
-                    database=db_name,
                     autocommit=True
                 )
+                cursor = self.connection.cursor()
+                cursor.execute(f"CREATE DATABASE IF NOT EXISTS {db_name}")
+                cursor.execute(f"USE {db_name}")
+                cursor.close()
+                self.connection.database = db_name
                 self.db_type = "mysql"
                 logger.info(f"Connected to MySQL Database: {db_name}@{host}:{port}")
+                self._ensure_mysql_schema()
                 return
             except Exception as e:
-                logger.warning(f"MySQL Connection failed: {e}. Falling back to SQLite.")
+                logger.warning(f"MySQL Connection/Setup failed: {e}. Falling back to SQLite.")
 
         # SQLite Fallback setup
         sqlite_rel_path = self.config.get("database", "sqlite_db_path", fallback="database/cicms.db")
@@ -356,6 +361,109 @@ class DatabaseManager:
         """
         cursor.executescript(schema_sql)
         self.connection.commit()
+
+    def _ensure_mysql_schema(self):
+        """Creates MySQL database tables, views, procedures, and triggers if they do not exist."""
+        cursor = self.connection.cursor()
+        cursor.execute("SHOW TABLES LIKE 'police_stations'")
+        exists = cursor.fetchone()
+        cursor.close()
+
+        if exists:
+            logger.info("MySQL tables already exist. Skipping schema initialization.")
+            return
+
+        logger.info("MySQL tables not found. Initializing database schema...")
+        sql_dir = Path(__file__).resolve().parent.parent / "sql"
+
+        # 1. Run schema.sql
+        self._execute_sql_file(sql_dir / "schema.sql", use_delimiter=False)
+        logger.info("MySQL schema tables created successfully.")
+
+        # 2. Run views.sql
+        self._execute_sql_file(sql_dir / "views.sql", use_delimiter=False)
+        logger.info("MySQL views created successfully.")
+
+        # 3. Run procedures.sql
+        self._execute_sql_file(sql_dir / "procedures.sql", use_delimiter=True)
+        logger.info("MySQL stored procedures created successfully.")
+
+        # 4. Run triggers.sql
+        self._execute_sql_file(sql_dir / "triggers.sql", use_delimiter=True)
+        logger.info("MySQL triggers created successfully.")
+
+    def _execute_sql_file(self, filepath: Path, use_delimiter: bool = False):
+        if not filepath.exists():
+            logger.error(f"SQL file not found: {filepath}")
+            return
+
+        with open(filepath, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        cursor = self.connection.cursor()
+        try:
+            if use_delimiter:
+                lines = []
+                for line in content.split('\n'):
+                    if line.strip().upper().startswith('DELIMITER'):
+                        continue
+                    lines.append(line)
+                content_clean = '\n'.join(lines)
+                
+                statements = content_clean.split('//')
+                for stmt in statements:
+                    stmt = stmt.strip()
+                    if stmt:
+                        cursor.execute(stmt)
+            else:
+                statements = self._split_sql(content)
+                for stmt in statements:
+                    cursor.execute(stmt)
+        except Exception as e:
+            logger.error(f"Error executing SQL file {filepath.name}: {e}")
+            raise e
+        finally:
+            cursor.close()
+
+    def _split_sql(self, sql_content: str) -> list:
+        statements = []
+        statement = []
+        in_single_quote = False
+        in_double_quote = False
+        in_backtick = False
+        escape = False
+        
+        for char in sql_content:
+            if escape:
+                statement.append(char)
+                escape = False
+                continue
+                
+            if char == '\\':
+                statement.append(char)
+                escape = True
+                continue
+                
+            if char == "'" and not in_double_quote and not in_backtick:
+                in_single_quote = not in_single_quote
+            elif char == '"' and not in_single_quote and not in_backtick:
+                in_double_quote = not in_double_quote
+            elif char == '`' and not in_single_quote and not in_double_quote:
+                in_backtick = not in_backtick
+                
+            if char == ';' and not in_single_quote and not in_double_quote and not in_backtick:
+                stmt_str = "".join(statement).strip()
+                if stmt_str:
+                    statements.append(stmt_str)
+                statement = []
+            else:
+                statement.append(char)
+                
+        stmt_str = "".join(statement).strip()
+        if stmt_str:
+            statements.append(stmt_str)
+            
+        return statements
 
     def execute_query(self, query: str, params: Tuple = ()) -> Any:
         """Executes INSERT/UPDATE/DELETE query."""

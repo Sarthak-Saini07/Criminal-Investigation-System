@@ -153,6 +153,28 @@ def seed_database():
     else:
         category_ids = [r["category_id"] for r in existing_cats]
 
+    # Seeding complaints
+    logger.info("Seeding sample complaints...")
+    existing_complaints = db.fetch_all("SELECT COUNT(*) as cnt FROM complaints")
+    if not existing_complaints or existing_complaints[0]["cnt"] == 0:
+        for i in range(1, 51):
+            comp_num = f"COMP-2025-{i:04d}"
+            c_name = f"{random.choice(FIRST_NAMES)} {random.choice(LAST_NAMES)}"
+            c_phone = f"+1-555-03{i:03d}"
+            c_addr = f"{random.randint(100, 999)} {random.choice(STREETS)}, {random.choice(CITIES)}"
+            inc_dt = random_date(2025, 2026)
+            loc = f"{random.randint(100, 999)} {random.choice(STREETS)}, {random.choice(CITIES)}"
+            details = f"Complainant reported incident of suspicious activity near {loc}."
+            sid = random.choice(station_ids)
+            status = random.choice(["Pending", "Converted to FIR", "Rejected"])
+            
+            q_comp = """
+            INSERT INTO complaints (complaint_number, complainant_name, complainant_phone, complainant_address, incident_date, incident_location, details, station_id, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            db.execute_query(q_comp, (comp_num, c_name, c_phone, c_addr, inc_dt.strftime("%Y-%m-%d %H:%M:%S"), loc, details, sid, status))
+        logger.info("Seeded 50 complaints successfully.")
+
     # 6. Bulk Generation: 2000 FIRs & Cases
     logger.info("Generating 2,000 FIRs and Cases (Bulk Data)...")
     existing_firs = db.fetch_all("SELECT COUNT(*) as cnt FROM firs")

@@ -93,7 +93,7 @@ class CaseView(ttk.Frame):
             ttk.Label(dialog, text="No status history recorded yet for this case.", font=("Segoe UI", 11)).pack(pady=30)
             return
 
-        txt = tk.Text(dialog, padding=15, font=("Consolas", 10), bg="#171c28", fg="#e0e6ed", insertbackground="white", relief="flat")
+        txt = tk.Text(dialog, padx=15, pady=15, font=("Consolas", 10), bg="#171c28", fg="#e0e6ed", insertbackground="white", relief="flat")
         txt.pack(fill=tk.BOTH, expand=True)
         for r in rows:
             txt.insert(tk.END, f"[{r['changed_at']}] Status: '{r['previous_status']}' -> '{r['new_status']}'\nBy User: {r['changed_by_user']} | Reason: {r['change_reason']}\n{'-'*65}\n")

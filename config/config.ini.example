@@ -2,7 +2,7 @@
 host = localhost
 port = 3306
 user = root
-password = Harshil@11
+password = <your_mysql_password>
 database = cicms_db
 use_sqlite_fallback = false
 sqlite_db_path = database/cicms.db

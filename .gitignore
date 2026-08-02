@@ -90,11 +90,20 @@ Thumbs.db
 database/*.db
 database/*.sqlite
 database/*.sqlite3
+database/backups/
 
 logs/
 *.log
 
+# Local credentials
+config/config.ini
+
 # Generated report exports (Excel / PDF / CSV outputs)
 *.xlsx
 *.pdf
+*.csv
 CICMS_Master_Report.xlsx
+
+# Ensure SQL database setup files are tracked
+!sql/*.sql
+!*.sql

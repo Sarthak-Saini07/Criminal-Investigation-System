@@ -29,20 +29,20 @@ def compute_all_kpis(df: pd.DataFrame) -> Dict[str, Any]:
 
     # Evidence Recovery Rate query
     ev_data = db.fetch_all("SELECT COUNT(*) as total, SUM(CASE WHEN status IN ('In Vault', 'Court Exhibit') THEN 1 ELSE 0 END) as secured FROM evidence")
-    ev_total = ev_data[0]["total"] if ev_data else 0
-    ev_sec = ev_data[0]["secured"] if ev_data else 0
+    ev_total = int(ev_data[0]["total"]) if ev_data and ev_data[0]["total"] is not None else 0
+    ev_sec = float(ev_data[0]["secured"]) if ev_data and ev_data[0]["secured"] is not None else 0.0
     evidence_recovery_rate = (ev_sec / ev_total * 100.0) if ev_total > 0 else 85.0
 
     # Conviction Rate Query
     court_data = db.fetch_all("SELECT COUNT(*) as total, SUM(CASE WHEN verdict = 'Convicted' THEN 1 ELSE 0 END) as convicted FROM court_cases WHERE verdict <> 'Pending'")
-    court_tot = court_data[0]["total"] if court_data else 0
-    court_conv = court_data[0]["convicted"] if court_data else 0
+    court_tot = int(court_data[0]["total"]) if court_data and court_data[0]["total"] is not None else 0
+    court_conv = float(court_data[0]["convicted"]) if court_data and court_data[0]["convicted"] is not None else 0.0
     conviction_rate = (court_conv / court_tot * 100.0) if court_tot > 0 else 72.5
 
     # Repeat Offender Rate Query
     sus_data = db.fetch_all("SELECT COUNT(DISTINCT suspect_id) as total, SUM(CASE WHEN prior_convictions_count > 0 THEN 1 ELSE 0 END) as repeats FROM criminal_histories")
-    sus_tot = sus_data[0]["total"] if sus_data else 0
-    sus_rep = sus_data[0]["repeats"] if sus_data else 0
+    sus_tot = int(sus_data[0]["total"]) if sus_data and sus_data[0]["total"] is not None else 0
+    sus_rep = float(sus_data[0]["repeats"]) if sus_data and sus_data[0]["repeats"] is not None else 0.0
     repeat_offender_rate = (sus_rep / sus_tot * 100.0) if sus_tot > 0 else 24.8
 
     return {
