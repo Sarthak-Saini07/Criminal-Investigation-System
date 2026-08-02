@@ -74,6 +74,11 @@ class AnalyticsView(ttk.Frame):
         dashboard_content = ttk.Frame(tab_dash)
         dashboard_content.pack(fill=tk.BOTH, expand=True)
 
+        # Right Column: Recent Critical Cases Treeview (40% width) - Packed FIRST to prevent squishing
+        table_container = ttk.Frame(dashboard_content, width=460)
+        table_container.pack(side=tk.RIGHT, fill=tk.BOTH, expand=False)
+        table_container.pack_propagate(False)
+
         # Left Column: Charts Container (60% width)
         chart_container = ttk.Frame(dashboard_content, padding=(0, 0, 10, 0))
         chart_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -86,21 +91,33 @@ class AnalyticsView(ttk.Frame):
         self.canvas.draw()
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
-        # Right Column: Recent Critical Cases Treeview (40% width)
-        table_container = ttk.Frame(dashboard_content, width=440)
-        table_container.pack(side=tk.RIGHT, fill=tk.BOTH, expand=False)
-        table_container.pack_propagate(False)
-
         table_card = ttk.Frame(table_container, style="Card.TFrame", padding=12)
         table_card.pack(fill=tk.BOTH, expand=True)
 
         ttk.Label(table_card, text="🚨 CRITICAL ACTIVE CASES", font=("Segoe UI", 11, "bold"), foreground="#00e676", style="Card.TLabel").pack(anchor=tk.W, pady=(0, 10))
 
+        # Real-time search filter bar
+        search_frame = ttk.Frame(table_card, style="Card.TFrame")
+        search_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        ttk.Label(search_frame, text="🔍 Search:", font=("Segoe UI", 9, "bold"), foreground="#b0bec5", style="Card.TLabel").pack(side=tk.LEFT, padx=(2, 5))
+        self.search_var = tk.StringVar()
+        self.search_var.trace_add("write", lambda *args: self._filter_cases())
+        
+        search_entry = ttk.Entry(search_frame, textvariable=self.search_var, font=("Segoe UI", 9))
+        search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
         cols = ("Case No", "Priority", "Status", "Lead Officer")
         self.cases_tree = ttk.Treeview(table_card, columns=cols, show="headings", selectmode="browse", height=12)
 
+        # Style colors for different priorities in dark mode
+        self.cases_tree.tag_configure("Critical", foreground="#ff5252")
+        self.cases_tree.tag_configure("High", foreground="#ff9100")
+        self.cases_tree.tag_configure("Medium", foreground="#ffd740")
+        self.cases_tree.tag_configure("Low", foreground="#b0bec5")
+
         for col in cols:
-            self.cases_tree.heading(col, text=col)
+            self.cases_tree.heading(col, text=col, command=lambda c=col: self.sort_column(c, False))
             self.cases_tree.column(col, width=95, anchor=tk.CENTER)
 
         self.cases_tree.column("Case No", width=110, anchor=tk.W)
@@ -141,9 +158,6 @@ class AnalyticsView(ttk.Frame):
 
     def _load_recent_cases(self):
         """Fetches and populates recent active cases from the database."""
-        for item in self.cases_tree.get_children():
-            self.cases_tree.delete(item)
-
         from database.queries import GET_ALL_CASES
         from database.connection import get_db
         db = get_db()
@@ -152,14 +166,65 @@ class AnalyticsView(ttk.Frame):
         # Filter for active cases (Open / In Progress status)
         active_cases = [c for c in cases if c["status"] in ["Open", "In Progress"]]
         
-        for c in active_cases[:12]:
-            priority_emoji = "🔴 " if c["priority"] == "Critical" else ("🟠 " if c["priority"] == "High" else "")
-            self.cases_tree.insert("", tk.END, values=(
-                c["case_number"],
-                f"{priority_emoji}{c['priority']}",
-                c["status"],
-                c["lead_officer_name"] or "Unassigned"
-            ))
+        # Sort by priority: Critical (0), High (1), Medium (2), Low (3), then by Case ID DESC
+        priority_order = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
+        active_cases.sort(key=lambda x: (priority_order.get(x["priority"], 99), -x["case_id"]))
+        
+        self.all_active_cases = active_cases
+        self._filter_cases()
+
+    def _filter_cases(self):
+        """Filters the displayed cases based on the search query."""
+        for item in self.cases_tree.get_children():
+            self.cases_tree.delete(item)
+
+        search_query = self.search_var.get().lower().strip()
+        
+        for c in self.all_active_cases:
+            case_no = c["case_number"].lower()
+            priority = c["priority"].lower()
+            status = c["status"].lower()
+            lead_officer = (c["lead_officer_name"] or "unassigned").lower()
+            
+            if (not search_query or 
+                search_query in case_no or 
+                search_query in priority or 
+                search_query in status or 
+                search_query in lead_officer):
+                
+                priority_emoji = "🔴 " if c["priority"] == "Critical" else ("🟠 " if c["priority"] == "High" else "")
+                self.cases_tree.insert("", tk.END, values=(
+                    c["case_number"],
+                    f"{priority_emoji}{c['priority']}",
+                    c["status"],
+                    c["lead_officer_name"] or "Unassigned"
+                ), tags=(c["priority"],))
+
+    def sort_column(self, col, reverse):
+        """Sorts the Treeview column."""
+        items = [(self.cases_tree.set(k, col), k) for k in self.cases_tree.get_children("")]
+        
+        if col == "Priority":
+            # Priority values have emojis like "🔴 Critical" or "🟠 High"
+            priority_order = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
+            def priority_key(item_tuple):
+                val = item_tuple[0]
+                # Strip emoji
+                val_clean = val.replace("🔴 ", "").replace("🟠 ", "").strip()
+                return priority_order.get(val_clean, 99)
+            items.sort(key=priority_key, reverse=reverse)
+        else:
+            try:
+                # Try sorting as numeric
+                items.sort(key=lambda t: float(t[0]), reverse=reverse)
+            except ValueError:
+                items.sort(key=lambda t: t[0].lower(), reverse=reverse)
+
+        for index, (_, k) in enumerate(items):
+            self.cases_tree.move(k, "", index)
+
+        # Toggle sort direction for the next click
+        self.cases_tree.heading(col, command=lambda: self.sort_column(col, not reverse))
 
     def refresh_analytics(self):
         self._load_and_process_data()
